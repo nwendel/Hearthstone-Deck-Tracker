@@ -55,8 +55,8 @@ namespace Hearthstone_Deck_Tracker
 				var cardPosY = Config.Instance.ExportCardsY * hsRect.Height;
 
 
-				Helper.MainWindow.Overlay.ForceHidden = true;
-				Helper.MainWindow.Overlay.UpdatePosition();
+				Core.Overlay.ForceHidden = true;
+				Core.Overlay.UpdatePosition();
 
 				if(Config.Instance.AutoClearDeck)
 					await ClearDeck(hsRect.Width, hsRect.Height, hsHandle, ratio);
@@ -102,8 +102,8 @@ namespace Hearthstone_Deck_Tracker
 			}
 			finally
 			{
-				Helper.MainWindow.Overlay.ForceHidden = false;
-				Helper.MainWindow.Overlay.UpdatePosition();
+				Core.Overlay.ForceHidden = false;
+				Core.Overlay.UpdatePosition();
 				if(Config.Instance.ExportPasteClipboard && Current_Clipboard != "")
 					Clipboard.SetText(Current_Clipboard);
 			}
@@ -203,7 +203,7 @@ namespace Hearthstone_Deck_Tracker
 		{
 			if(!User32.IsHearthstoneInForeground())
 			{
-				Helper.MainWindow.ShowMessage("Exporting aborted", "Hearthstone window lost focus.");
+				Core.MainWindow.ShowMessage("Exporting aborted", "Hearthstone window lost focus.");
 				Logger.WriteLine("Exporting aborted, window lost focus", "DeckExporter");
 				return -1;
 			}
@@ -257,8 +257,16 @@ namespace Hearthstone_Deck_Tracker
 						await Task.Delay(200 - Config.Instance.DeckExportDelay);
 						if(CardHasLock(hsHandle, (int)(cardPosX + width * 0.048), (int)(cardPosY + height * 0.287), width, height))
 						{
-							Logger.WriteLine("Only one copy found: " + card.Name, "DeckExporter", 1);
-							return 1;
+							if(CardExists(hsHandle, (int)card2PosX, (int)cardPosY, width, height))
+							{
+								await ClickOnPoint(hsHandle, new Point((int)card2PosX + 50, (int)cardPosY + 50));
+								return 0;
+							}
+							else
+							{
+								Logger.WriteLine("Only one copy found: " + card.Name, "DeckExporter", 1);
+								return 1;
+							}
 						}
 
 						await ClickOnPoint(hsHandle, new Point((int)cardPosX + 50, (int)cardPosY + 50));
@@ -401,7 +409,7 @@ namespace Hearthstone_Deck_Tracker
 				Helper.CaptureHearthstone(
 				                          new Point((int)GetXPos(Config.Instance.ExportClearX, width, ratio),
 				                                    (int)(Config.Instance.ExportClearCheckYFixed * height)), 1, 1, wndHandle);
-			return ColorDistance(capture.GetPixel(0, 0), Color.FromArgb(255, 56, 45, 69), 5);
+			return capture != null && ColorDistance(capture.GetPixel(0, 0), Color.FromArgb(255, 56, 45, 69), 5);
 		}
 
 		private static bool ColorDistance(Color color, Color target, double distance)
