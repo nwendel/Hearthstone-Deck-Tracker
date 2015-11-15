@@ -1,5 +1,6 @@
 ﻿#region
 
+using System;
 using System.Collections.Generic;
 
 #endregion
@@ -36,42 +37,93 @@ namespace Hearthstone_Deck_Tracker.Hearthstone
 			"BRMC",
 			"TBA",
 			"TB_",
-			"TBST_"
+			"TBST_",
+			"LOEA",
+			"LOE_008",
+			"LOE_030",
+
 		};
 
-		public static readonly List<string> SecretIdsHunter = new List<string>
-		{
-			"AT_060",  //bear trap
-			"EX1_610", //explosive trap
-			"EX1_611", //freezing trap
-			"EX1_533", //misdirection
-			"EX1_609", //snipe
-			"EX1_554"  //snake trap
-		};
+	    public static class Secrets
+        {
+            public static class Hunter
+            {
+                public static List<string> All
+                {
+	                get
+	                {
+						if(DateTime.UtcNow < new DateTime(2015, 12, 3)) //LOE wing 3 release date
+							return new List<string> { BearTrap, ExplosiveTrap, FreezingTrap, Misdirection, Snipe, SnakeTrap };
+						return new List<string> { BearTrap, DartTrap, ExplosiveTrap, FreezingTrap, Misdirection, Snipe, SnakeTrap };
+	                }
+                }
 
-		public static readonly List<string> SecretIdsMage = new List<string>
-		{
-			"EX1_287", //counterspell
-			"FP1_018", //duplicate
-			"AT_002",  //effigy
-            "EX1_289", //ice barrier
-			"EX1_295", //ice block
-			"EX1_294", //mirror entity
-			"tt_010",  //spellbender
-			"EX1_594"  //vaporize
-		};
+                public static string BearTrap { get { return "AT_060"; } }
+				public static string DartTrap { get { return "LOE_021"; } }
+                public static string ExplosiveTrap { get { return "EX1_610"; } }
+                public static string FreezingTrap { get { return "EX1_611"; } }
+                public static string Misdirection { get { return "EX1_533"; } }
+                public static string Snipe { get { return "EX1_609"; } }
+                public static string SnakeTrap { get { return "EX1_554"; } }
+            }
+            public static class Mage
+            {
+                public static List<string> All
+                {
+                    get { return new List<string> { Counterspell, Duplicate, Effigy, IceBarrier, IceBlock, MirrorEntity, Spellbender, Vaporize }; }
+                }
+                public static string Counterspell { get { return "EX1_287"; } }
+                public static string Duplicate { get { return "FP1_018"; } }
+                public static string Effigy { get { return "AT_002"; } }
+                public static string IceBarrier { get { return "EX1_289"; } }
+                public static string IceBlock { get { return "EX1_295"; } }
+                public static string MirrorEntity { get { return "EX1_294"; } }
+                public static string Spellbender { get { return "tt_010"; } }
+                public static string Vaporize { get { return "EX1_594"; } }
+            }
+            public static class Paladin
+            {
+                public static List<string> All
+                {
+                    get { return new List<string> { Avenge, CompetitiveSpirit, EyeForAnEye, NobleSacrifice, Redemption, Repentance, SacredTrial }; }
+                }
+                public static string Avenge { get { return "FP1_020"; } }
+                public static string CompetitiveSpirit { get { return "AT_073"; } }
+                public static string EyeForAnEye { get { return "EX1_132"; } }
+                public static string NobleSacrifice { get { return "EX1_130"; } }
+                public static string Redemption { get { return "EX1_136"; } }
+                public static string Repentance { get { return "EX1_379"; } }
+				public static string SacredTrial { get { return "LOE_027"; } }
+            }
 
-		public static readonly List<string> SecretIdsPaladin = new List<string>
-		{
-			"FP1_020", //avenge
-			"AT_073",  //competitive spirit
-            "EX1_132", //eye for an eye
-			"EX1_130", //noble sacrifice
-			"EX1_136", //redemption
-			"EX1_379"  //repentance
-		};
+            public static List<string> FastCombat = new List<string> {
+                Hunter.FreezingTrap,
+                Hunter.ExplosiveTrap,
+                Hunter.Misdirection,
+                Paladin.NobleSacrifice,
+                Mage.Vaporize
+            };
+        }
 
-		public static readonly Dictionary<string, string[]> SubCardIds = new Dictionary<string, string[]>
+        // todo: spells which add deathrattle. Soul of the Forest, Ancestral Spirit
+        // todo: conditional deathrattle summons: Voidcaller, Stalagg/Feugen
+        // todo: Baron Rivendare
+        public static readonly Dictionary<string, int> DeathrattleSummonCardIds = new Dictionary<string, int>
+        {
+            { "EX1_534", 2 }, // Savannah Highmane
+            { "AT_036", 1 }, // Anub'arak
+            { "AT_019", 1 }, // Dreadsteed
+            { "EX1_110", 1 }, // Cairne Bloodhoof
+            { "EX1_556", 1 }, // Harvest Golem
+            { "GVG_096", 1 }, // Piloted Shredder
+            { "GVG_105", 1 }, // Piloted Sky Golem
+            { "GVG_114", 1 }, // Sneed's Old Shredder
+            { "FP1_002", 2 }, // Haunted Creeper
+            { "FP1_007", 1 }, // Nerubian Egg
+            { "FP1_012", 1 }, // Sludge Belcher
+        };
+        
+        public static readonly Dictionary<string, string[]> SubCardIds = new Dictionary<string, string[]>
 		{
 			{
 				//Ysera
@@ -136,5 +188,49 @@ namespace Hearthstone_Deck_Tracker.Hearthstone
 			{"EX1_323", "Jaraxxus"},
 			{"BRM_027", "Ragnaros the Firelord"}
 		};
+		
+		public class Druid
+		{
+			public const string Malorne = "GVG_035";
+			public const string Recycle = "GVG_031";
+		}
+
+		public class Mage
+		{
+			public const string ForgottenTorch = "LOE_002";
+			public const string RoaringTorch = "LOE_002t";
+		}
+
+		public class Priest
+		{
+			public const string Entomb = "LOE_104";
+			public const string ExcavatedEvil = "LOE_111";
+		}
+
+		public class Rogue
+		{
+			public const string GangUp = "BRM_007";
+		}
+
+		public class Warlock
+		{
+			public const string Cursed = "LOE_007t";
+			public const string CurseOfRafaam = "LOE_007";
+		}
+
+		public class Warrior
+		{
+			public const string IronJuggernaut = "GVG_056";
+			public const string BurrowingMine = "GVG_056t";
+		}
+
+		public class Neutral
+		{
+			public const string AncientCurse = "LOE_110t";
+			public const string AncientShade = "LOE_110";
+			public const string EliseStarseeker = "LOE_079";
+			public const string MapToTheGoldenMonkey = "LOE_019t";
+			public const string GoldenMonkey = "LOE_019t2";
+		}
 	}
 }
