@@ -15,7 +15,9 @@ using Hearthstone_Deck_Tracker.LogReader;
 using Hearthstone_Deck_Tracker.Replay;
 using Hearthstone_Deck_Tracker.Stats;
 using Hearthstone_Deck_Tracker.Stats.CompiledStats;
+using Hearthstone_Deck_Tracker.Utility;
 using Hearthstone_Deck_Tracker.Windows;
+using Point = System.Drawing.Point;
 
 #endregion
 
@@ -132,12 +134,6 @@ namespace Hearthstone_Deck_Tracker
 				Logger.WriteLine("Waiting for game mode detection...", "HandleInMenu");
 				await _game.GameModeDetection();
 				Logger.WriteLine("Detected game mode, continuing.", "HandleInMenu");
-			}
-			if(_game.CurrentGameMode == GameMode.Casual)
-			{
-				Logger.WriteLine("CurrentGameMode=Casual, Waiting for ranked detection...", "HandleInMenu");
-				await LogReaderManager.RankedDetection();
-				Logger.WriteLine("Done waiting for ranked detection, continuing.", "HandleInMenu");
 			}
 
 			if (Config.Instance.RecordReplays && _game.Entities.Count > 0 && !_game.SavedReplay && _game.CurrentGameStats != null
@@ -259,9 +255,11 @@ namespace Hearthstone_Deck_Tracker
         public async void TurnStart(ActivePlayer player, int turnNumber)
 		{
 			if(!_game.IsMulliganDone)
-				Logger.WriteLine(string.Format("--- Mulligan ---"), "GameEventHandler");
+				Logger.WriteLine("--- Mulligan ---", "GameEventHandler");
 			while(!_game.IsMulliganDone)
 				await Task.Delay(100);
+			if(_game.CurrentGameMode == GameMode.Casual || _game.CurrentGameMode == GameMode.None)
+				DetectRanks();
 			Logger.WriteLine(string.Format("--- {0} turn {1} ---", player, turnNumber + 1), "GameEventHandler");
             //doesn't really matter whose turn it is for now, just restart timer
             //maybe add timer to player/opponent windows
@@ -278,7 +276,59 @@ namespace Hearthstone_Deck_Tracker
             GameEvents.OnTurnStart.Execute(player);
         }
 
-        private Entity _attackingEntity;
+
+	    private bool _rankDetectionRunning;
+	    private int _rankDetectionTries;
+	    private const int MaxRankDetectionTries = 3;
+
+	    private async void DetectRanks()
+	    {
+		    if(_rankDetectionTries >= MaxRankDetectionTries)
+		    {
+			    Logger.WriteLine(string.Format("Exceeded max rank detection tries ({0}). Gamemode must be casual.", MaxRankDetectionTries),
+			                     "GameEventHandler");
+		    }
+		    if(_rankDetectionRunning)
+			    return;
+		    _rankDetectionRunning = true;
+		    Logger.WriteLine(string.Format("Trying to detect ranks... (overlay toggles: {0})", _rankDetectionTries), "GameEventHandler");
+		    var rect = Helper.GetHearthstoneRect(true);
+		    var reEnableOverlay = false;
+		    if(Core.Overlay.IsRankConvered())
+		    {
+			    //only increment rank detection tries if the users can tell it's happening (overlay flickering)
+			    _rankDetectionTries++;
+			    Logger.WriteLine("Toggling overlay...", "GameEventHandler");
+			    Core.Overlay.ShowOverlay(false);
+			    reEnableOverlay = true;
+		    }
+		    while(await Helper.FriendsListOpen())
+			    Core.Overlay.ShowFriendsListWarning(true);
+		    Core.Overlay.ShowFriendsListWarning(false);
+		    var capture = Helper.CaptureHearthstone(new Point(0, 0), rect.Width / 3, rect.Height);
+		    if(reEnableOverlay)
+			    Core.Overlay.ShowOverlay(true);
+
+		    // try to detect rank
+		    var match = await RankDetection.Match(capture);
+		    if(match.Success)
+		    {
+			    Logger.WriteLine(string.Format("Rank detection successful! Player={0}, Opponent={1}", match.Player, match.Opponent),
+			                     "GameEventHandler");
+			    SetGameMode(GameMode.Ranked);
+			    if(_game.CurrentGameStats != null)
+			    {
+				    _game.CurrentGameStats.GameMode = GameMode.Ranked;
+				    _game.CurrentGameStats.Rank = match.Player;
+				    _game.CurrentGameStats.OpponentRank = match.Opponent;
+			    }
+		    }
+		    else
+			    Logger.WriteLine("No ranks were detected.", "GameEventHandler");
+		    _rankDetectionRunning = false;
+	    }
+
+		private Entity _attackingEntity;
         private Entity _defendingEntity;
         public void HandleAttackingEntity(Entity entity)
         {
@@ -321,51 +371,76 @@ namespace Hearthstone_Deck_Tracker
 				Core.Overlay.ShowSecrets();
         }
 
-        public void HandleOpponentMinionDeath(Entity entity, int turn)
-        {
-            if (!Config.Instance.AutoGrayoutSecrets)
-                return;
+	    public void HandleOpponentMinionDeath(Entity entity, int turn)
+	    {
+		    if(!Config.Instance.AutoGrayoutSecrets)
+			    return;
 
-            _game.OpponentSecrets.SetZero(CardIds.Secrets.Mage.Duplicate);
+		    _game.OpponentSecrets.SetZero(CardIds.Secrets.Mage.Duplicate);
 
-			HandleAvengeAsync();
 
-            int numDeathrattleMinions = 0;
+		    var numDeathrattleMinions = 0;
 
-            if (entity.IsActiveDeathrattle)
-                CardIds.DeathrattleSummonCardIds.TryGetValue(entity.CardId, out numDeathrattleMinions);
+		    if(entity.IsActiveDeathrattle)
+		    {
+			    if(!CardIds.DeathrattleSummonCardIds.TryGetValue(entity.CardId, out numDeathrattleMinions))
+			    {
+				    if(entity.CardId == HearthDb.CardIds.Collectible.Neutral.Stalagg
+				       && _game.Opponent.Graveyard.Any(x => x.CardId == HearthDb.CardIds.Collectible.Neutral.Feugen)
+				       || entity.CardId == HearthDb.CardIds.Collectible.Neutral.Feugen
+				       && _game.Opponent.Graveyard.Any(x => x.CardId == HearthDb.CardIds.Collectible.Neutral.Stalagg))
+					    numDeathrattleMinions = 1;
+				}
+				if(_game.Entities.Any(x => x.Value.CardId == HearthDb.CardIds.NonCollectible.Druid.SoulOfTheForestEnchantment
+										&& x.Value.GetTag(GAME_TAG.ATTACHED) == entity.Id))
+					numDeathrattleMinions++;
+				if(_game.Entities.Any(x => x.Value.CardId == HearthDb.CardIds.NonCollectible.Shaman.AncestralSpiritEnchantment
+										&& x.Value.GetTag(GAME_TAG.ATTACHED) == entity.Id))
+					numDeathrattleMinions++;
+			}
 
-            // redemption never triggers if a deathrattle effect fills up the board
-            // effigy can trigger ahead of the deathrattle effect, but only if effigy was played before the deathrattle minion
-            if (_game.OpponentMinionCount < 7 - numDeathrattleMinions)
-            {
-                _game.OpponentSecrets.SetZero(CardIds.Secrets.Paladin.Redemption);
-                _game.OpponentSecrets.SetZero(CardIds.Secrets.Mage.Effigy);
-            }
-            else
-            {
-                // todo: need to properly break ties when effigy + deathrattle played in same turn
-                int minionTurnPlayed = turn - entity.GetTag(GAME_TAG.NUM_TURNS_IN_PLAY);
-                SecretHelper secret = _game.OpponentSecrets.Secrets.FirstOrDefault(x => x.TurnPlayed >= minionTurnPlayed);
-                int secretOffset = secret != null ? _game.OpponentSecrets.Secrets.IndexOf(secret) : 0;
-                _game.OpponentSecrets.SetZeroOlder(CardIds.Secrets.Mage.Effigy, secretOffset);
-            }
+		    if(_game.OpponentEntity != null && _game.OpponentEntity.HasTag(GAME_TAG.EXTRA_DEATHRATTLES))
+			    numDeathrattleMinions *= (_game.OpponentEntity.GetTag(GAME_TAG.EXTRA_DEATHRATTLES) + 1);
 
-            if (Core.MainWindow != null)
-				Core.Overlay.ShowSecrets();
-        }
+		    HandleAvengeAsync(numDeathrattleMinions);
+
+		    // redemption never triggers if a deathrattle effect fills up the board
+		    // effigy can trigger ahead of the deathrattle effect, but only if effigy was played before the deathrattle minion
+		    if(_game.OpponentMinionCount < 7 - numDeathrattleMinions)
+		    {
+			    _game.OpponentSecrets.SetZero(CardIds.Secrets.Paladin.Redemption);
+			    _game.OpponentSecrets.SetZero(CardIds.Secrets.Mage.Effigy);
+		    }
+		    else
+		    {
+			    // todo: need to properly break ties when effigy + deathrattle played in same turn
+			    int minionTurnPlayed = turn - entity.GetTag(GAME_TAG.NUM_TURNS_IN_PLAY);
+			    SecretHelper secret = _game.OpponentSecrets.Secrets.FirstOrDefault(x => x.TurnPlayed >= minionTurnPlayed);
+			    int secretOffset = secret != null ? _game.OpponentSecrets.Secrets.IndexOf(secret) : 0;
+			    _game.OpponentSecrets.SetZeroOlder(CardIds.Secrets.Mage.Effigy, secretOffset);
+		    }
+
+		    if(Core.MainWindow != null)
+			    Core.Overlay.ShowSecrets();
+	    }
 
 	    private bool _awaitingAvenge;
 	    private const int AvengeDelay = 50;
-	    public async void HandleAvengeAsync()
+	    private int _avengeDeathRattleCount;
+
+	    public async void HandleAvengeAsync(int deathRattleCount)
 	    {
+		    _avengeDeathRattleCount += deathRattleCount;
 		    if(_awaitingAvenge)
 			    return;
 		    _awaitingAvenge = true;
+		    if(_game.OpponentMinionCount == 0)
+			    return;
 		    await _game.GameTime.WaitForDuration(AvengeDelay);
-			if(_game.OpponentMinionCount > 0)
-				_game.OpponentSecrets.SetZero(CardIds.Secrets.Paladin.Avenge);
+		    if(_game.OpponentMinionCount - _avengeDeathRattleCount > 0)
+			    _game.OpponentSecrets.SetZero(CardIds.Secrets.Paladin.Avenge);
 		    _awaitingAvenge = false;
+		    _avengeDeathRattleCount = 0;
 	    }
 
         public void HandleOpponentDamage(Entity entity)
@@ -418,7 +493,19 @@ namespace Hearthstone_Deck_Tracker
             _game.Reset();
 
             var selectedDeck = DeckList.Instance.ActiveDeckVersion;
-            if (selectedDeck != null)
+
+            if (Config.Instance.SpectatorUseNoDeck && _game.CurrentGameMode == GameMode.Spectator)
+            {
+                Logger.WriteLine("SpectatorUseNoDeck is " + Config.Instance.SpectatorUseNoDeck, "GameEventHandler");
+                if(selectedDeck != null)
+                {
+                    Config.Instance.ReselectLastDeckUsed = true;
+                    Logger.WriteLine("ReselectLastUsedDeck set to true", "GameEventHandler");
+                    Config.Save();
+                }
+                Core.MainWindow.SelectDeck(null, true);
+            }
+			else if (selectedDeck != null)
                 _game.SetPremadeDeck((Deck)selectedDeck.Clone());
             GameEvents.OnGameStart.Execute();
         }
@@ -430,15 +517,25 @@ namespace Hearthstone_Deck_Tracker
 				Logger.WriteLine("HandleGameEnd was already called.", "HandleGameEnd");
 		        return;
 			}
+			//deal with instant concedes
+			if(_game.CurrentGameMode == GameMode.Casual || _game.CurrentGameMode == GameMode.None)
+				DetectRanks();
 			_handledGameEnd = true;
 			TurnTimer.Instance.Stop();
 			Core.Overlay.HideTimers();
 			Logger.WriteLine("Game ended...", "HandleGameEnd");
             if (_game.CurrentGameMode == GameMode.Spectator && !Config.Instance.RecordSpectator)
-            {
-                Logger.WriteLine("Game is in Spectator mode, discarded. (Record Spectator disabled)", "HandleGameEnd");
+			{
+				if(Config.Instance.ReselectLastDeckUsed && DeckList.Instance.ActiveDeck == null)
+				{
+					Core.MainWindow.SelectLastUsedDeck();
+					Config.Instance.ReselectLastDeckUsed = false;
+					Logger.WriteLine("ReselectLastUsedDeck set to false", "HandleGameEnd");
+					Config.Save();
+				}
+				Logger.WriteLine("Game is in Spectator mode, discarded. (Record Spectator disabled)", "HandleGameEnd");
                 _assignedDeck = null;
-                return;
+				return;
             }
             var player = _game.Entities.FirstOrDefault(e => e.Value.IsPlayer);
             var opponent = _game.Entities.FirstOrDefault(e => e.Value.HasTag(GAME_TAG.PLAYER_ID) && !e.Value.IsPlayer);
@@ -547,18 +644,6 @@ namespace Hearthstone_Deck_Tracker
 						await _game.GameModeDetection();
 						Logger.WriteLine("Detected game mode, continuing.", "HandleGameEnd");
 					}
-	                if(_game.CurrentGameMode == GameMode.Casual)
-					{
-						Logger.WriteLine("CurrentGameMode=Casual, Waiting for ranked detection...", "HandleGameEnd");
-						await LogReaderManager.RankedDetection();
-						Logger.WriteLine("Done waiting for ranked detection, continuing.", "HandleGameEnd");
-					}
-	                if(_game.CurrentGameMode == GameMode.Ranked && !_lastGame.HasRank)
-					{
-						Logger.WriteLine("Waiting for rank detection...", "HandleGameEnd");
-						await RankDetection(5);
-						Logger.WriteLine("Rank detected, continuing.", "HandleGameEnd");
-					}
 					Logger.WriteLine("Waiting for game mode to be saved to game...", "HandleGameEnd");
 					await GameModeSaved(15);
 					Logger.WriteLine("Game mode was saved, continuing.", "HandleGameEnd");
@@ -582,15 +667,16 @@ namespace Hearthstone_Deck_Tracker
 	            }
                 _assignedDeck = null;
             }
+
+            if(Config.Instance.ReselectLastDeckUsed && selectedDeck == null)
+            {
+                Core.MainWindow.SelectLastUsedDeck();
+                Config.Instance.ReselectLastDeckUsed = false;
+                Logger.WriteLine("ReselectLastUsedDeck set to false", "HandleGameEnd");
+                Config.Save();
+            }
         }
 #pragma warning restore 4014
-        private async Task RankDetection(int timeoutInSeconds)
-        {
-            var startTime = DateTime.Now;
-            var timeout = TimeSpan.FromSeconds(timeoutInSeconds);
-            while (_lastGame != null && !_lastGame.HasRank && (DateTime.Now - startTime) < timeout)
-                await Task.Delay(100);
-		}
         private async Task GameModeSaved(int timeoutInSeconds)
         {
             var startTime = DateTime.Now;
@@ -671,7 +757,7 @@ namespace Hearthstone_Deck_Tracker
                     DeckStatsList.Save();
                 }
 
-                Core.MainWindow.DeckPickerList.UpdateDecks();
+                Core.MainWindow.DeckPickerList.UpdateDecks(forceUpdate: new[] {_assignedDeck});
                 statsControl.Refresh();
             }
             else if (_assignedDeck != null && _assignedDeck.DeckStats.Games.Contains(_game.CurrentGameStats))
@@ -679,6 +765,17 @@ namespace Hearthstone_Deck_Tracker
                 //game was not supposed to be recorded, remove from deck again.
                 _assignedDeck.DeckStats.Games.Remove(_game.CurrentGameStats);
                 statsControl.Refresh();
+                Logger.WriteLine(string.Format("Gamemode {0} is not supposed to be saved. Removed game from {1}.", _game.CurrentGameMode, _assignedDeck), "GameEventHandler");
+            }
+            else if(_assignedDeck == null)
+            {
+                var defaultDeck = DefaultDeckStats.Instance.GetDeckStats(_game.Player.Class);
+                if(defaultDeck != null)
+                {
+                    defaultDeck.Games.Remove(_game.CurrentGameStats);
+                    statsControl.Refresh();
+                    Logger.WriteLine(string.Format("Gamemode {0} is not supposed to be saved. Removed game from default {1}.", _game.CurrentGameMode, _game.Player.Class), "GameEventHandler");
+                }
             }
         }
 
@@ -719,11 +816,6 @@ namespace Hearthstone_Deck_Tracker
         }
 
         #region Player
-
-        public void HandlePlayerName(string name)
-        {
-            _game.Player.Name = name;
-        }
 
         public void HandlePlayerGetToDeck(Entity entity, string cardId, int turn)
         {
@@ -880,11 +972,6 @@ namespace Hearthstone_Deck_Tracker
         #endregion
 
         #region Opponent
-
-        public void HandleOpponentName(string name)
-        {
-            _game.Opponent.Name = name;
-        }
 
         public void HandleOpponentGetToDeck(Entity entity, int turn)
         {
@@ -1055,11 +1142,6 @@ namespace Hearthstone_Deck_Tracker
             if (_game.CurrentGameStats != null)
             {
                 _game.CurrentGameStats.Rank = rank;
-                Logger.WriteLine("set rank to " + rank, "GameEventHandler");
-            }
-            else if (_lastGame != null)
-            {
-                _lastGame.Rank = rank;
                 Logger.WriteLine("set rank to " + rank, "GameEventHandler");
             }
         }

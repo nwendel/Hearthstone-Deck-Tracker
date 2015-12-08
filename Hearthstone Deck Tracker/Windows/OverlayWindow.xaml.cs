@@ -1187,14 +1187,14 @@ namespace Hearthstone_Deck_Tracker
             var card = ToolTipCard.DataContext as Card;
             if (card == null)
                 return;
-            if (!CardIds.SubCardIds.Keys.Contains(card.Id))
+			if(card.EntourageCardIds.Length  == 0)
             {
                 HideAdditionalToolTips();
                 return;
             }
 
             StackPanelAdditionalTooltips.Children.Clear();
-            foreach (var id in CardIds.SubCardIds[card.Id])
+            foreach (var id in card.EntourageCardIds)
             {
                 var tooltip = new CardToolTip();
                 tooltip.SetValue(DataContextProperty, Database.GetCardFromId(id));
@@ -1389,6 +1389,46 @@ namespace Hearthstone_Deck_Tracker
 		    var handler = PropertyChanged;
 		    if(handler != null)
 			    handler(this, new PropertyChangedEventArgs(propertyName));	
+	    }
+
+		private const double RankCoveredMaxLeft = 0.1;
+		private const double PlayerRankCoveredMaxHeight = 0.8;
+		private const double OpponentRankCoveredMaxTop = 0.8;
+		public bool IsRankConvered()
+		{
+			if(Canvas.GetLeft(StackPanelPlayer) < RankCoveredMaxLeft * Height)
+			{
+				if(Canvas.GetTop(StackPanelPlayer) + StackPanelPlayer.ActualHeight > PlayerRankCoveredMaxHeight * Height)
+				{
+					Logger.WriteLine("Player rank is potentially covered by player deck.", "Overlay");
+					return true;
+				}
+				if(Canvas.GetTop(StackPanelPlayer) < OpponentRankCoveredMaxTop * Height)
+				{
+					Logger.WriteLine("Opponent rank is potentially covered by player deck.", "Overlay");
+					return true;
+				}
+			}
+			if(Canvas.GetLeft(StackPanelOpponent) < RankCoveredMaxLeft * Height)
+			{
+				if(Canvas.GetTop(StackPanelOpponent) + StackPanelOpponent.ActualHeight > PlayerRankCoveredMaxHeight * Height)
+				{
+					Logger.WriteLine("Player rank is potentially covered by opponent deck.", "Overlay");
+					return true;
+				}
+				if(Canvas.GetTop(StackPanelOpponent) < OpponentRankCoveredMaxTop * Height)
+				{
+					Logger.WriteLine("Opponent rank is potentially covered by opponent deck.", "Overlay");
+					return true;
+				}
+			}
+			Logger.WriteLine("No ranks should be covered by any decks.", "Overlay");
+			return false;
+		}
+
+	    public void ShowFriendsListWarning(bool show)
+	    {
+		    StackPanelFriendsListWarning.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
 	    }
     }
 }

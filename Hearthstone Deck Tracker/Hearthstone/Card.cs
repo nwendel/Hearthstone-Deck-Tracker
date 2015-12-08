@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
@@ -11,8 +12,9 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Xml.Serialization;
-using Hearthstone_Deck_Tracker.Enums;
+using HearthDb.Enums;
 using Hearthstone_Deck_Tracker.Utility;
+using Rarity = Hearthstone_Deck_Tracker.Enums.Rarity;
 
 #endregion
 
@@ -269,6 +271,45 @@ namespace Hearthstone_Deck_Tracker.Hearthstone
 		[XmlIgnore]
 		public List<string> AlternativeTexts = new List<string>();
 
+		private readonly HearthDb.Card _dbCard;
+
+		public string[] EntourageCardIds { get { return _dbCard != null ? _dbCard.EntourageCardIds : new string[0]; } }
+
+		public Card(HearthDb.Card dbCard)
+		{
+			_dbCard = dbCard;
+			Language lang;
+			if(!Enum.TryParse(Config.Instance.SelectedLanguage, out lang))
+				lang = Language.enUS;
+			Id = dbCard.Id;
+			Count = 1;
+            PlayerClass = HearthDbConverter.ConvertClass(dbCard.Class);
+			Rarity = HearthDbConverter.RariryConverter(dbCard.Rarity);
+			Type = HearthDbConverter.CardTypeConverter(dbCard.Type);
+			Name = dbCard.GetLocName(Language.enUS);
+			Cost = dbCard.Cost;
+			LocalizedName = dbCard.GetLocName(lang);
+			Text = dbCard.GetLocText(lang);
+			EnglishText = dbCard.GetLocText(Language.enUS);
+			Attack = dbCard.Attack;
+			Health = dbCard.Health;
+			Race = HearthDbConverter.RaceConverter(dbCard.Race);
+			Durability = dbCard.Durability > 0 ? (int?)dbCard.Durability : null;
+			Mechanics = dbCard.Mechanics;
+			Artist = dbCard.ArtistName;
+			Set = HearthDbConverter.SetConverter(dbCard.Set);
+			foreach(var altLangStr in Config.Instance.AlternativeLanguages)
+			{
+				Language altLang;
+				if(Enum.TryParse(altLangStr, out altLang))
+				{
+					AlternativeNames.Add(dbCard.GetLocName(altLang));
+					AlternativeTexts.Add(dbCard.GetLocText(altLang));
+				}
+			}
+			_loaded = true;
+		}
+
 		[XmlIgnore]
 		public int InHandCount
 		{
@@ -368,6 +409,21 @@ namespace Hearthstone_Deck_Tracker.Hearthstone
 				           .Replace(".", "")
 				           .Replace("!", "")
 				           .Replace(",", "");
+			}
+		}
+
+		public FontFamily Font
+		{
+			get
+			{
+				var lang = Config.Instance.SelectedLanguage;
+				var font = new FontFamily();
+				// if the language uses a Latin script use Belwe font
+				if(Helper.LatinLanguages.Contains(lang))
+				{
+					font = new FontFamily(new Uri("pack://application:,,,/"), "./resources/#Belwe Bd BT");
+				}
+				return font;
 			}
 		}
 
