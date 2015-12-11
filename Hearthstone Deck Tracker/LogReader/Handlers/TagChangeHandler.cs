@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Threading.Tasks;
 using Hearthstone_Deck_Tracker.Enums;
 using Hearthstone_Deck_Tracker.Enums.Hearthstone;
 using Hearthstone_Deck_Tracker.Hearthstone;
@@ -36,6 +37,7 @@ namespace Hearthstone_Deck_Tracker.LogReader.Handlers
             var prevValue = game.Entities[id].GetTag(tag);
             game.Entities[id].SetTag(tag, value);
 
+
             if (tag == GAME_TAG.CONTROLLER && gameState.WaitForController != null && game.Player.Id == -1)
             {
                 var p1 = game.Entities.FirstOrDefault(e => e.Value.GetTag(GAME_TAG.PLAYER_ID) == 1).Value;
@@ -60,7 +62,6 @@ namespace Hearthstone_Deck_Tracker.LogReader.Handlers
                 }
             }
             var controller = game.Entities[id].GetTag(GAME_TAG.CONTROLLER);
-            var player = game.Entities[id].HasTag(GAME_TAG.CONTROLLER) ? (controller == game.Player.Id ? "FRIENDLY" : "OPPOSING") : "";
             var cardId = game.Entities[id].CardId;
             if (tag == GAME_TAG.ZONE)
             {
@@ -375,6 +376,8 @@ namespace Hearthstone_Deck_Tracker.LogReader.Handlers
                     }
                 }
             }
+            else if(tag == GAME_TAG.CARDTYPE && value == (int)TAG_CARDTYPE.HERO)
+                SetHeroAsync(id, game, gameState);
             else if (tag == GAME_TAG.CURRENT_PLAYER && value == 1)
             {
                 var activePlayer = game.Entities[id].IsPlayer ? ActivePlayer.Player : ActivePlayer.Opponent;
@@ -390,12 +393,12 @@ namespace Hearthstone_Deck_Tracker.LogReader.Handlers
 			}
             else if (tag == GAME_TAG.DEFENDING)
             {
-                if (player == "OPPOSING")
+                if (controller == game.Opponent.Id)
                     gameState.GameHandler.HandleDefendingEntity(value == 1 ? game.Entities[id] : null);
             }
             else if (tag == GAME_TAG.ATTACKING)
             {
-                if (player == "FRIENDLY")
+                if (controller == game.Player.Id)
                     gameState.GameHandler.HandleAttackingEntity(value == 1 ? game.Entities[id] : null);
             }
             else if (tag == GAME_TAG.PROPOSED_DEFENDER)
@@ -528,5 +531,30 @@ namespace Hearthstone_Deck_Tracker.LogReader.Handlers
             }
         }
 
+		private async void SetHeroAsync(int id, IGame game, IHsGameState gameState)
+		{
+			Logger.WriteLine("Found hero with id=" + id, "TagChangeHandler");
+			if(game.PlayerEntity == null)
+			{
+				Logger.WriteLine("Waiting for PlayerEntity to exist", "TagChangeHandler");
+				while(game.PlayerEntity == null)
+					await Task.Delay(100);
+				Logger.WriteLine("Found PlayerEntity", "TagChangeHandler");
+			}
+			if(string.IsNullOrEmpty(game.Player.Class) && id == game.PlayerEntity.GetTag(GAME_TAG.HERO_ENTITY))
+			{
+				gameState.GameHandler.SetPlayerHero(Database.GetHeroNameFromId(game.Entities[id].CardId));
+				return;
+			}
+			if(game.OpponentEntity == null)
+			{
+				Logger.WriteLine("Waiting for OpponentEntity to exist", "TagChangeHandler");
+				while(game.OpponentEntity == null)
+					await Task.Delay(100);
+				Logger.WriteLine("Found OpponentEntity", "TagChangeHandler");
+			}
+			if(string.IsNullOrEmpty(game.Opponent.Class) && id == game.OpponentEntity.GetTag(GAME_TAG.HERO_ENTITY))
+				gameState.GameHandler.SetOpponentHero(Database.GetHeroNameFromId(game.Entities[id].CardId));
+		}
     }
 }

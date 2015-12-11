@@ -359,7 +359,6 @@
     <Compile Include="LogReader\Handlers\AssetHandler.cs" />
     <Compile Include="LogReader\Handlers\BobHandler.cs" />
     <Compile Include="LogReader\Handlers\PowerHandler.cs" />
-    <Compile Include="LogReader\Handlers\ZoneHandler.cs" />
     <Compile Include="LogReader\HsGameState.cs" />
     <Compile Include="LogReader\HsLogReaderConstants.cs" />
     <Compile Include="LogReader\Handlers\RachelleHandler.cs" />
@@ -1230,6 +1229,9 @@
     <Resource Include="Images\card-icon-returned.png" />
     <Resource Include="Images\card-marker.png" />
     <Content Include="Images\board_damage.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Images\frame_golden.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="Images\gold_progress_frame_center.png">
